@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenLayers WMS Viewer</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v8.2.0/ol.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Ensure the body and html take full height */
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif; /* Using Inter font */
+            overflow: hidden; /* Prevent scrolling */
+        }
+        /* Style for the map container */
+        #map {
+            width: 100%;
+            height: 100%;
+            border-radius: 0.5rem; /* Rounded corners */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+        }
+        /* Custom styles for OpenLayers controls if needed */
+        .ol-zoom .ol-zoom-in,
+        .ol-zoom .ol-zoom-out {
+            background-color: rgba(74, 85, 104, 0.9); /* Darker background for controls */
+            color: white;
+            border-radius: 0.25rem;
+            padding: 0.5rem;
+        }
+        .ol-zoom .ol-zoom-in:hover,
+        .ol-zoom .ol-zoom-out:hover {
+            background-color: rgba(45, 55, 72, 0.9); /* Darker hover effect */
+        }
+        /* Style for the layer control panel */
+        #layer-control {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 1000; /* Ensure it's above the map */
+            max-height: 90%; /* Limit height to prevent overflow on small screens */
+            overflow-y: auto; /* Enable scrolling if content exceeds max-height */
+            width: 45%; /* Reduced by 50% from 90% */
+            max-width: 40vw; /* Reduced by 50% from 80vw */
+        }
+        #layer-control label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+            color: #333;
+        }
+        #layer-control input[type="checkbox"] {
+            margin-right: 0.5rem;
+        }
+
+        /* Styles for modal dialogs (settings and feature info) */
+        .modal {
+            display: none; /* Hidden by default */
+            position: fixed; /* Stay in place */
+            z-index: 2000; /* Sit on top */
+            left: 0;
+            top: 0;
+            width: 100%; /* Full width */
+            height: 100%;
+            overflow: auto; /* Enable scroll if needed */
+            background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: auto;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            width: 90%; /* Take 90% of parent width */
+            max-width: 80vw; /* Maximum width of 80% of viewport width */
+            min-width: 300px; /* Minimum width to ensure readability */
+            position: relative;
+        }
+
+        .close-button {
+            color: #aaa;
+            position: absolute;
+            top: 0.5rem;
+            right: 1rem;
+            font-size: 1.5rem;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close-button:hover,
+        .close-button:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        /* Loading indicator styles */
+        #loading-indicator {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 0.5rem;
+            z-index: 2001; /* Above modals */
+        }
+
+        /* Style for zoom level display */
+        #zoom-level-display {
+            position: absolute;
+            bottom: 1rem; /* Adjust as needed to position below zoom controls */
+            left: 1rem;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            font-weight: bold;
+            color: #333;
+            z-index: 999; /* Ensure it's above the map but below other controls */
+        }
+
+        /* Collapsible styles for layer control */
+        #layer-control-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+        }
+        #layer-control-content.collapsed {
+            display: none;
+        }
+        #collapse-toggle-icon {
+            transition: transform 0.3s ease;
+        }
+        #layer-control-content.collapsed + #layer-control-header #collapse-toggle-icon {
+            transform: rotate(-90deg); /* Rotate arrow when collapsed */
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen bg-gray-100 p-4">
+    <header class="text-center mb-4">
+        <h1 class="text-3xl font-bold text-gray-800">PDOK Kadastrale Kaart WMS Viewer</h1>
+    </header>
+    <main class="flex-grow flex items-center justify-center relative">
+        <div id="map" class="flex-grow"></div>
+
+        <div id="layer-control">
+            <div id="layer-control-header">
+                <h2 class="text-lg font-semibold">Layers</h2>
+                <button id="collapse-toggle-btn" class="p-1 rounded-full hover:bg-gray-200 focus:outline-none">
+                    <svg id="collapse-toggle-icon" class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </button>
+            </div>
+            <div id="layer-control-content">
+                <div>
+                    <label for="brt-wmts-layer-toggle" class="flex items-center cursor-pointer">
+                        <input type="checkbox" id="brt-wmts-layer-toggle" checked class="form-checkbox h-5 w-5 text-blue-600 rounded-md">
+                        <span class="ml-2 text-gray-700">BRT Achtergrondkaart WMTS</span>
+                    </label>
+                </div>
+                <div class="mt-2">
+                    <label for="osm-layer-toggle" class="flex items-center cursor-pointer">
+                        <input type="checkbox" id="osm-layer-toggle" class="form-checkbox h-5 w-5 text-blue-600 rounded-md">
+                        <span class="ml-2 text-gray-700">OpenStreetMap</span>
+                    </label>
+                </div>
+                <div class="mt-2">
+                    <label for="wms-layer-toggle" class="flex items-center cursor-pointer">
+                        <input type="checkbox" id="wms-layer-toggle" checked class="form-checkbox h-5 w-5 text-blue-600 rounded-md">
+                        <span class="ml-2 text-gray-700">Kadastrale Kaart WMS</span>
+                    </label>
+                </div>
+                <hr class="my-4 border-gray-300">
+                <button id="zoom-to-location-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-300 ease-in-out">
+                    Zoom to Stored Location
+                </button>
+                <button id="store-current-view-btn" class="w-full mt-2 bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-300 ease-in-out">
+                    Store Current View
+                </button>
+                <button id="export-pdf-btn" class="w-full mt-2 bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-300 ease-in-out">
+                    Export as PDF
+                </button>
+                <button id="settings-btn" class="w-full mt-2 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-300 ease-in-out">
+                    Settings
+                </button>
+            </div>
+        </div>
+
+        <div id="settings-modal" class="modal">
+            <div class="modal-content">
+                <span class="close-button" data-modal-target="settings-modal">&times;</span>
+                <h2 class="text-xl font-bold mb-4">Location Settings</h2>
+                <div class="mb-4">
+                    <label for="latitude-input" class="block text-gray-700 text-sm font-bold mb-2">Latitude:</label>
+                    <input type="number" id="latitude-input" step="any" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                </div>
+                <div class="mb-4">
+                    <label for="longitude-input" class="block text-gray-700 text-sm font-bold mb-2">Longitude:</label>
+                    <input type="number" id="longitude-input" step="any" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                </div>
+                <div class="mb-4">
+                    <label for="zoom-input" class="block text-gray-700 text-sm font-bold mb-2">Zoom Level:</label>
+                    <input type="number" id="zoom-input" step="1" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                </div>
+                <button id="save-location-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-300 ease-in-out">
+                    Save Location
+                </button>
+                <div id="message-box" class="mt-4 p-2 text-sm text-center rounded hidden"></div>
+            </div>
+        </div>
+
+        <div id="feature-info-modal" class="modal">
+            <div class="modal-content">
+                <span class="close-button" data-modal-target="feature-info-modal">&times;</span>
+                <h2 class="text-xl font-bold mb-4">Feature Information</h2>
+                <div id="feature-info-content" class="text-gray-700 max-h-96 overflow-y-auto">
+                    </div>
+                <div id="feature-message-box" class="mt-4 p-2 text-sm text-center rounded hidden"></div>
+            </div>
+        </div>
+
+        <div id="loading-indicator">Fetching data...</div>
+
+        <div id="zoom-level-display">Zoom: </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/ol@v8.2.0/dist/ol.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script>
+        // Wait for the window to load before initializing the map
+        window.onload = function() {
+            // Define the WMS service URL and layer name
+            const wmsUrl = 'https://service.pdok.nl/kadaster/kadastralekaart/wms/v5_0';
+            const wmsLayerName = 'kadastralekaart';
+
+            // Define the WMTS service URL and layer details for BRT Achtergrondkaart
+            const brtWmtsUrl = 'https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0';
+            const brtWmtsLayerName = 'standaard'; // 'standaard', 'grijs', 'pastel', 'water'
+            const brtWmtsMatrixSet = 'EPSG:3857'; // Web Mercator
+            const brtWmtsFormat = 'image/png';
+
+            // Create a WMS source for the Kadastrale Kaart
+            const wmsSource = new ol.source.TileWMS({
+                url: wmsUrl,
+                params: {
+                    'LAYERS': wmsLayerName,
+                    'TILED': true,
+                    'VERSION': '1.3.0'
+                },
+                serverType: 'geoserver',
+                crossOrigin: 'anonymous'
+            });
+
+            // Create a Tile layer using the WMS source
+            const wmsLayer = new ol.layer.Tile({
+                source: wmsSource,
+                title: 'Kadastrale Kaart WMS'
+            });
+
+            // Create a standard OpenStreetMap base layer
+            const osmLayer = new ol.layer.Tile({
+                source: new ol.source.OSM(),
+                title: 'OpenStreetMap',
+                visible: false // Initially off, BRT is default
+            });
+
+            // Define resolutions and matrix IDs for the WMTS layer
+            // These are typically derived from the WMTS GetCapabilities document
+            // For EPSG:3857 (WebMercatorQuad) from PDOK, these are common values.
+            const resolutions = [
+                156543.033928, 78271.516964, 39135.758482, 19567.879241, 9783.9396205,
+                4891.96981025, 2445.98490513, 1222.99245256, 611.49622628, 305.74811314,
+                152.87405657, 76.437028285, 38.2185141425, 19.1092570713, 9.5546285356,
+                4.7773142678, 2.3886571339, 1.19432856696, 0.59716428348, 0.29858214174,
+                0.14929107087, 0.07464553543
+            ];
+            const matrixIds = Array.from(Array(resolutions.length).keys()).map(i => brtWmtsMatrixSet + ':' + i);
+
+            // Create a WMTS source for the BRT Achtergrondkaart
+            const brtWmtsSource = new ol.source.WMTS({
+                url: brtWmtsUrl,
+                layer: brtWmtsLayerName,
+                matrixSet: brtWmtsMatrixSet,
+                format: brtWmtsFormat,
+                projection: 'EPSG:3857',
+                tileGrid: new ol.tilegrid.WMTS({
+                    // Corrected origin for EPSG:3857 global grid
+                    origin: [-20037508.3428, 20037508.3428],
+                    resolutions: resolutions,
+                    matrixIds: matrixIds
+                }),
+                style: 'default', // This is important for PDOK WMTS
+                crossOrigin: 'anonymous'
+            });
+
+            // Add an error listener for WMTS tiles
+            brtWmtsSource.on('tileloaderror', function(event) {
+                // Safely try to get the tile source, or log the tile object itself
+                const tileSrc = event.tile && typeof event.tile.getSrc === 'function' ? event.tile.getSrc() : 'Unknown source';
+                console.error('Error loading BRT WMTS tile:', tileSrc, event.tile);
+                showMessage(featureMessageBox, 'Error loading BRT Achtergrondkaart tiles. Check console for details.', 'error');
+            });
+
+            // Create a Tile layer using the WMTS source (initially visible)
+            const brtWmtsLayer = new ol.layer.Tile({
+                source: brtWmtsSource,
+                title: 'BRT Achtergrondkaart WMTS',
+                visible: true // Initially ON
+            });
+
+
+            // Initialize the map
+            const map = new ol.Map({
+                target: 'map',
+                layers: [
+                    brtWmtsLayer, // BRT as default base layer
+                    osmLayer,     // OSM as alternative base layer (initially hidden)
+                    wmsLayer      // WMS as overlay
+                ],
+                view: new ol.View({
+                    center: ol.proj.fromLonLat([5.9, 52.2]),
+                    zoom: 8,
+                    projection: 'EPSG:3857'
+                })
+            });
+
+            // Get references to the layer toggle checkboxes
+            const osmLayerToggle = document.getElementById('osm-layer-toggle');
+            const wmsLayerToggle = document.getElementById('wms-layer-toggle');
+            const brtWmtsLayerToggle = document.getElementById('brt-wmts-layer-toggle'); // New toggle
+
+            // Set initial checkbox states based on layer visibility
+            brtWmtsLayerToggle.checked = brtWmtsLayer.getVisible();
+            osmLayerToggle.checked = osmLayer.getVisible();
+            wmsLayerToggle.checked = wmsLayer.getVisible();
+
+            // Log initial layer visibility for debugging
+            console.log('Initial layer visibility:');
+            console.log('BRT Achtergrondkaart WMTS:', brtWmtsLayer.getVisible());
+            console.log('OpenStreetMap:', osmLayer.getVisible());
+            console.log('Kadastrale Kaart WMS:', wmsLayer.getVisible());
+
+
+            // Add event listeners to toggle layer visibility
+            osmLayerToggle.addEventListener('change', function() {
+                osmLayer.setVisible(this.checked);
+                console.log('OpenStreetMap layer visibility:', this.checked);
+            });
+
+            wmsLayerToggle.addEventListener('change', function() {
+                wmsLayer.setVisible(this.checked);
+                console.log('Kadastrale Kaart WMS layer visibility:', this.checked);
+            });
+
+            brtWmtsLayerToggle.addEventListener('change', function() {
+                brtWmtsLayer.setVisible(this.checked);
+                console.log('BRT Achtergrondkaart WMTS layer visibility:', this.checked);
+            });
+
+            // Handle window resizing to ensure the map remains responsive
+            window.addEventListener('resize', function() {
+                map.updateSize();
+            });
+
+            // --- Location Management and Settings Dialog ---
+
+            // Default location if nothing is stored in localStorage
+            const defaultLocation = {
+                latitude: 52.0907,  // Utrecht
+                longitude: 5.1214,  // Utrecht
+                zoom: 12
+            };
+
+            // Get references to modal elements
+            const settingsModal = document.getElementById('settings-modal');
+            const closeButtons = document.querySelectorAll('.close-button'); // Select all close buttons
+            const latitudeInput = document.getElementById('latitude-input');
+            const longitudeInput = document.getElementById('longitude-input');
+            const zoomInput = document.getElementById('zoom-input');
+            const saveLocationBtn = document.getElementById('save-location-btn');
+            const zoomToLocationBtn = document.getElementById('zoom-to-location-btn');
+            const storeCurrentViewBtn = document.getElementById('store-current-view-btn'); // New button reference
+            const exportPdfBtn = document.getElementById('export-pdf-btn'); // New button reference
+            const settingsBtn = document.getElementById('settings-btn');
+            const messageBox = document.getElementById('message-box');
+
+            // Feature Info Modal elements
+            const featureInfoModal = document.getElementById('feature-info-modal');
+            const featureInfoContent = document.getElementById('feature-info-content');
+            const featureMessageBox = document.getElementById('feature-message-box');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            const zoomLevelDisplay = document.getElementById('zoom-level-display'); // New element for zoom level
+
+            // Collapsible layer control elements
+            const collapseToggleBtn = document.getElementById('collapse-toggle-btn');
+            const layerControlContent = document.getElementById('layer-control-content');
+            const collapseToggleIcon = document.getElementById('collapse-toggle-icon');
+
+
+            /**
+             * Updates the displayed zoom level.
+             */
+            function updateZoomLevelDisplay() {
+                const currentZoom = map.getView().getZoom();
+                zoomLevelDisplay.textContent = `Zoom: ${currentZoom.toFixed(1)}`; // Display with 1 decimal place
+            }
+
+            // Listen for map view changes to update the zoom level display
+            map.getView().on('change:resolution', updateZoomLevelDisplay);
+            // Initial update
+            updateZoomLevelDisplay();
+
+
+            /**
+             * Displays a message in the message box.
+             * @param {HTMLElement} boxElement - The message box element.
+             * @param {string} message - The message to display.
+             * @param {string} type - 'success' or 'error' for styling.
+             */
+            function showMessage(boxElement, message, type) {
+                boxElement.textContent = message;
+                boxElement.classList.remove('hidden', 'bg-red-200', 'text-red-800', 'bg-green-200', 'text-green-800', 'bg-blue-200', 'text-blue-800');
+                if (type === 'success') {
+                    boxElement.classList.add('bg-green-200', 'text-green-800');
+                } else if (type === 'error') {
+                    boxElement.classList.add('bg-red-200', 'text-red-800');
+                } else if (type === 'info') {
+                    boxElement.classList.add('bg-blue-200', 'text-blue-800');
+                }
+                setTimeout(() => {
+                    boxElement.classList.add('hidden');
+                }, 3000); // Hide after 3 seconds
+            }
+
+            /**
+             * Loads location data from localStorage.
+             * @returns {object} An object with latitude, longitude, and zoom.
+             */
+            function loadLocationFromLocalStorage() {
+                try {
+                    const storedLat = localStorage.getItem('ol_zoom_latitude');
+                    const storedLon = localStorage.getItem('ol_zoom_longitude');
+                    const storedZoom = localStorage.getItem('ol_zoom_zoom');
+
+                    const lat = storedLat ? parseFloat(storedLat) : defaultLocation.latitude;
+                    const lon = storedLon ? parseFloat(storedLon) : defaultLocation.longitude;
+                    const zoom = storedZoom ? parseInt(storedZoom, 10) : defaultLocation.zoom;
+
+                    // Validate parsed values
+                    if (isNaN(lat) || isNaN(lon) || isNaN(zoom)) {
+                        console.warn('Invalid values found in localStorage, using default location.');
+                        return defaultLocation;
+                    }
+                    return { latitude: lat, longitude: lon, zoom: zoom };
+                } catch (e) {
+                    console.error('Error loading from localStorage:', e);
+                    showMessage(messageBox, 'Error loading settings from local storage.', 'error');
+                    return defaultLocation;
+                }
+            }
+
+            /**
+             * Saves location data to localStorage.
+             * @param {number} latitude
+             * @param {number} longitude
+             * @param {number} zoom
+             */
+            function saveLocationToLocalStorage(latitude, longitude, zoom) {
+                try {
+                    localStorage.setItem('ol_zoom_latitude', latitude.toString());
+                    localStorage.setItem('ol_zoom_longitude', longitude.toString());
+                    localStorage.setItem('ol_zoom_zoom', zoom.toString());
+                    showMessage(messageBox, 'Location saved successfully!', 'success');
+                    console.log('Location saved to localStorage:', { latitude, longitude, zoom });
+                } catch (e) {
+                    console.error('Error saving to localStorage:', e);
+                    showMessage(messageBox, 'Error saving settings to local storage.', 'error');
+                }
+            }
+
+            /**
+             * Populates the settings dialog with current values from localStorage.
+             */
+            function populateSettingsDialog() {
+                const currentLocation = loadLocationFromLocalStorage();
+                latitudeInput.value = currentLocation.latitude;
+                longitudeInput.value = currentLocation.longitude;
+                zoomInput.value = currentLocation.zoom;
+            }
+
+            // Event listener for opening the settings modal
+            settingsBtn.addEventListener('click', function() {
+                populateSettingsDialog();
+                settingsModal.style.display = 'flex'; // Use flex to center content
+            });
+
+            // Event listeners for closing modals
+            closeButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const targetModalId = this.getAttribute('data-modal-target');
+                    document.getElementById(targetModalId).style.display = 'none';
+                });
+            });
+
+            // Close modals if clicking outside the content
+            window.addEventListener('click', function(event) {
+                if (event.target === settingsModal) {
+                    settingsModal.style.display = 'none';
+                }
+                if (event.target === featureInfoModal) {
+                    featureInfoModal.style.display = 'none';
+                }
+            });
+
+            // Event listener for saving location from the settings dialog
+            saveLocationBtn.addEventListener('click', function() {
+                const newLat = parseFloat(latitudeInput.value);
+                const newLon = parseFloat(longitudeInput.value);
+                const newZoom = parseInt(zoomInput.value, 10);
+
+                if (isNaN(newLat) || isNaN(newLon) || isNaN(newZoom)) {
+                    showMessage(messageBox, 'Please enter valid numbers for Latitude, Longitude, and Zoom.', 'error');
+                    return;
+                }
+                if (newZoom < 0 || newZoom > 20) { // Basic zoom level validation
+                    showMessage(messageBox, 'Zoom level must be between 0 and 20.', 'error');
+                    return;
+                }
+
+                saveLocationToLocalStorage(newLat, newLon, newZoom);
+                settingsModal.style.display = 'none'; // Close modal after saving
+            });
+
+            // Event listener for "Zoom to Stored Location" button
+            zoomToLocationBtn.addEventListener('click', function() {
+                const storedLocation = loadLocationFromLocalStorage();
+                const view = map.getView();
+                view.animate({
+                    center: ol.proj.fromLonLat([storedLocation.longitude, storedLocation.latitude]),
+                    zoom: storedLocation.zoom,
+                    duration: 1000 // Animation duration in milliseconds
+                });
+                console.log('Zooming to stored location:', storedLocation);
+                showMessage(messageBox, `Zooming to Lat: ${storedLocation.latitude}, Lon: ${storedLocation.longitude}, Zoom: ${storedLocation.zoom}`, 'success');
+            });
+
+            // New: Event listener for "Store Current View" button
+            storeCurrentViewBtn.addEventListener('click', function() {
+                const view = map.getView();
+                const currentCenter = view.getCenter();
+                const currentZoom = view.getZoom();
+
+                if (currentCenter && currentZoom !== undefined) {
+                    const lonLat = ol.proj.toLonLat(currentCenter, 'EPSG:3857');
+                    saveLocationToLocalStorage(lonLat[1], lonLat[0], currentZoom); // latitude, longitude, zoom
+                    showMessage(messageBox, 'Current view saved successfully!', 'success');
+                } else {
+                    showMessage(messageBox, 'Could not retrieve current map view to save.', 'error');
+                }
+            });
+
+            // --- Export as PDF functionality ---
+            exportPdfBtn.addEventListener('click', function() {
+                loadingIndicator.textContent = 'Generating PDF...';
+                loadingIndicator.style.display = 'block';
+
+                // Get the map viewport element, then query for the canvas within it
+                const mapViewport = map.getViewport();
+                const mapCanvas = mapViewport.querySelector('canvas');
+
+                if (!mapCanvas) {
+                    console.error('Map canvas element not found for PDF export.');
+                    showMessage(messageBox, 'Error: Map canvas not found for PDF export.', 'error');
+                    loadingIndicator.style.display = 'none';
+                    return;
+                }
+
+                // Ensure the map is fully rendered before capturing
+                map.once('rendercomplete', function() {
+                    const dataUrl = mapCanvas.toDataURL('image/png');
+
+                    // Initialize jsPDF
+                    const { jsPDF } = window.jspdf;
+                    const pdf = new jsPDF('landscape', 'pt', 'a4'); // Landscape A4 size
+
+                    const imgWidth = pdf.internal.pageSize.getWidth();
+                    // Corrected imgHeight calculation
+                    const imgHeight = imgWidth * (mapCanvas.height / mapCanvas.width);
+
+                    // Add the image to the PDF
+                    pdf.addImage(dataUrl, 'PNG', 0, 0, imgWidth, imgHeight);
+
+                    // Add some text info
+                    const currentCenter = map.getView().getCenter();
+                    const currentZoom = map.getView().getZoom();
+                    const lonLat = ol.proj.toLonLat(currentCenter, 'EPSG:3857');
+
+                    pdf.setFontSize(10);
+                    pdf.text(`Map View Export`, 40, imgHeight + 20);
+                    pdf.text(`Center: Lon ${lonLat[0].toFixed(4)}, Lat ${lonLat[1].toFixed(4)}`, 40, imgHeight + 35);
+                    pdf.text(`Zoom: ${currentZoom.toFixed(1)}`, 40, imgHeight + 50);
+                    pdf.text(`Date: ${new Date().toLocaleString()}`, 40, imgHeight + 65);
+
+
+                    // Save the PDF
+                    pdf.save('map_export.pdf');
+
+                    loadingIndicator.style.display = 'none';
+                    showMessage(messageBox, 'Map exported as PDF successfully!', 'success');
+                });
+
+                // Force a re-render to ensure `rendercomplete` fires
+                map.renderSync();
+            });
+
+
+            // --- Collapsible Layer Control Logic ---
+            collapseToggleBtn.addEventListener('click', function() {
+                layerControlContent.classList.toggle('collapsed');
+                // The CSS transition on the SVG handles the rotation
+            });
+
+
+            // --- WMS GetFeatureInfo on Click ---
+
+            /**
+             * Parses the HTML content from a WMS GetFeatureInfo response
+             * and extracts key-value pairs from tables.
+             * Assumes tables have a header row (<th>) and then data rows (<td>).
+             * @param {string} htmlString The HTML string to parse.
+             * @returns {Array<Object>} An array of objects, where each object
+             * represents a feature and its properties.
+             */
+            function parseFeatureInfoHtml(htmlString) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlString, 'text/html');
+                const features = [];
+
+                // Find all tables, as each table might represent a feature or a section of properties
+                const tables = doc.querySelectorAll('table.featureInfo'); // Target tables with class 'featureInfo'
+
+                tables.forEach(table => {
+                    const properties = {};
+                    const headerRow = table.querySelector('tr:first-child');
+                    const dataRow = table.querySelector('tr:nth-child(2)'); // Assuming data is in the second row
+
+                    if (headerRow && dataRow) {
+                        const headers = Array.from(headerRow.querySelectorAll('th')).map(th => th.textContent.trim());
+                        const values = Array.from(dataRow.querySelectorAll('td')).map(td => td.textContent.trim());
+
+                        // Populate properties object
+                        headers.forEach((header, index) => {
+                            if (values[index] !== undefined) {
+                                properties[header] = values[index];
+                            }
+                        });
+                    }
+
+                    if (Object.keys(properties).length > 0) {
+                        features.push(properties);
+                    }
+                });
+                return features;
+            }
+
+            map.on('singleclick', async function(event) {
+                loadingIndicator.style.display = 'block'; // Show loading indicator
+                featureInfoContent.innerHTML = ''; // Clear previous content
+                featureMessageBox.classList.add('hidden'); // Hide previous message
+
+                const view = map.getView();
+                const viewResolution = view.getResolution();
+                const viewProjection = view.getProjection();
+
+                // Construct GetFeatureInfo URL
+                const url = wmsSource.getFeatureInfoUrl(
+                    event.coordinate, // Coordinate in map projection (EPSG:3857)
+                    viewResolution,
+                    viewProjection,
+                    {
+                        'INFO_FORMAT': 'text/html', // Request HTML format
+                        'QUERY_LAYERS': wmsLayerName // Specify the layer to query
+                    }
+                );
+
+                if (url) {
+                    console.log('GetFeatureInfo URL:', url);
+                    try {
+                        const response = await fetch(url);
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        const htmlContent = await response.text();
+                        console.log('Raw WMS GetFeatureInfo HTML response:', htmlContent); // DEBUGGING LINE
+
+                        const features = parseFeatureInfoHtml(htmlContent);
+
+                        if (features.length > 0) {
+                            let displayHtml = '';
+                            features.forEach((feature, index) => {
+                                // Use caption if available, otherwise default to "Feature X"
+                                const captionElement = new DOMParser().parseFromString(htmlContent, 'text/html').querySelectorAll('table.featureInfo caption')[index];
+                                const featureTitle = captionElement ? captionElement.textContent.trim() : `Feature ${index + 1}`;
+
+                                displayHtml += `<h3 class="font-semibold text-md mb-2">${featureTitle}</h3>`;
+                                displayHtml += '<div class="grid grid-cols-2 gap-2 text-sm mb-4">';
+                                for (const key in feature) {
+                                    if (Object.hasOwnProperty.call(feature, key)) {
+                                        displayHtml += `<div class="font-bold">${key}:</div>`;
+                                        displayHtml += `<div>${feature[key]}</div>`;
+                                    }
+                                }
+                                displayHtml += '</div>';
+                            });
+                            featureInfoContent.innerHTML = displayHtml;
+                            showMessage(featureMessageBox, `Found ${features.length} feature(s).`, 'success');
+                        } else {
+                            // If HTML content exists but no features were parsed, it's an unexpected format
+                            // Check for common "no features found" messages in the raw HTML
+                            if (htmlContent.trim() === '' || htmlContent.includes('no features were found') || htmlContent.includes('No features found') || htmlContent.includes('No features selected')) {
+                                featureInfoContent.innerHTML = '<p>No cadastral features found at this location.</p>';
+                                showMessage(featureMessageBox, 'No features found.', 'info');
+                            } else {
+                                featureInfoContent.innerHTML = '<p class="text-red-600">Could not parse feature information from the response. Unexpected format.</p>';
+                                showMessage(featureMessageBox, 'Unexpected response format. Check console for raw HTML.', 'error');
+                                console.error('Unexpected WMS GetFeatureInfo HTML format:', htmlContent);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error fetching WMS GetFeatureInfo:', error);
+                        featureInfoContent.innerHTML = '<p class="text-red-600">Error fetching feature information.</p>';
+                        showMessage(featureMessageBox, `Error: ${error.message}`, 'error');
+                    } finally {
+                        loadingIndicator.style.display = 'none'; // Hide loading indicator
+                        featureInfoModal.style.display = 'flex'; // Show feature info modal
+                    }
+                } else {
+                    loadingIndicator.style.display = 'none';
+                    featureInfoContent.innerHTML = '<p>Could not generate GetFeatureInfo URL for this layer.</p>';
+                    showMessage(featureMessageBox, 'URL generation failed.', 'error');
+                    featureInfoModal.style.display = 'flex';
+                }
+            });
+
+            console.log('OpenLayers map initialized with WMS layer, layer control, location management, and WMS GetFeatureInfo click functionality.');
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL List Search SPA (Vanilla JS)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <header class="fixed top-0 left-0 right-0 z-10 bg-white shadow-md p-4">
+        <div class="max-w-2xl mx-auto">
+            <h1 class="text-3xl font-bold text-center text-gray-800 mb-4">
+                URL List Search
+            </h1>
+            <div class="mb-0">
+                <input
+                    type="text"
+                    id="search-input"
+                    placeholder="Search URLs by name, address, or tags..."
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg bg-white text-gray-900"
+                    aria-label="Search URLs"
+                />
+            </div>
+        </div>
+    </header>
+
+    <main class="pt-40 flex justify-center p-4">
+        <div id="app-container" class="bg-white p-6 rounded-xl shadow-lg w-full max-w-2xl">
+            <ul id="url-list" class="space-y-3">
+                </ul>
+            <p id="no-results-message" class="text-center text-gray-600 text-lg hidden">
+                No URLs found matching your search.
+            </p>
+        </div>
+    </main>
+
+    <script>
+        // Initial data for URLs
+        const allUrls = [
+            { id: '1', name: 'Google', url: 'https://www.google.com', tags: ['search', 'engine', 'tech'] },
+            { id: '2', name: 'GitHub', url: 'https://github.com', tags: ['code', 'version control', 'development'] },
+            { id: '3', name: 'MDN Web Docs', url: 'https://developer.mozilla.org', tags: ['web development', 'docs', 'reference'] },
+            { id: '4', name: 'Maps', url: '#maps.html', tags: [] },
+            { id: '5', name: 'RSS Reader', url: '#rss-reader.html', tags: [] },
+        ];
+
+        // Get DOM elements
+        const searchInput = document.getElementById('search-input');
+        const urlList = document.getElementById('url-list');
+        const noResultsMessage = document.getElementById('no-results-message');
+
+        /**
+         * Renders the list of URLs based on the provided array.
+         * @param {Array<Object>} urlsToRender - The array of URL objects to display.
+         */
+        function renderUrls(urlsToRender) {
+            urlList.innerHTML = ''; // Clear existing list items
+
+            if (urlsToRender.length === 0) {
+                noResultsMessage.classList.remove('hidden'); // Show no results message
+            } else {
+                noResultsMessage.classList.add('hidden'); // Hide no results message
+            }
+
+            urlsToRender.forEach(url => {
+                const listItem = document.createElement('li');
+                listItem.className = 'bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow duration-200';
+
+                const anchor = document.createElement('a');
+                anchor.href = url.url;
+                anchor.target = '_blank';
+                anchor.rel = 'noopener noreferrer';
+                anchor.className = 'block text-blue-700 hover:text-blue-900 font-medium text-lg truncate';
+                anchor.title = url.url;
+
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = url.name;
+                anchor.appendChild(nameSpan);
+
+                const urlSpan = document.createElement('span');
+                urlSpan.className = 'text-sm text-gray-500 block mt-1';
+                urlSpan.textContent = url.url;
+                anchor.appendChild(urlSpan);
+
+                if (url.tags && url.tags.length > 0) {
+                    const tagsDiv = document.createElement('div');
+                    tagsDiv.className = 'mt-2 flex flex-wrap gap-2';
+                    url.tags.forEach((tag, index) => {
+                        const tagSpan = document.createElement('span');
+                        tagSpan.className = 'bg-blue-200 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded-full';
+                        tagSpan.textContent = tag;
+                        tagsDiv.appendChild(tagSpan);
+                    });
+                    anchor.appendChild(tagsDiv);
+                }
+
+                listItem.appendChild(anchor);
+                urlList.appendChild(listItem);
+            });
+        }
+
+        /**
+         * Filters the URLs based on the current search input value.
+         */
+        function filterUrls() {
+            const query = searchInput.value.toLowerCase();
+            const filtered = allUrls.filter(url =>
+                url.name.toLowerCase().includes(query) ||
+                url.url.toLowerCase().includes(query) ||
+                (url.tags && url.tags.some(tag => tag.toLowerCase().includes(query)))
+            );
+            renderUrls(filtered);
+        }
+
+        // Add event listeners
+        searchInput.addEventListener('input', filterUrls);
+
+        // Initial render when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            renderUrls(allUrls);
+        });
+    </script>
+</body>
+</html>

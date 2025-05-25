@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced RSS Feed Reader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Light gray background */
+        }
+        /* Custom scrollbar for better aesthetics */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #e0e0e0;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #a0a0a0;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #808080;
+        }
+        /* Basic rotation for the arrow icon */
+        .rotate-90 {
+            transform: rotate(90deg);
+        }
+        .transition-transform {
+            transition: transform 0.2s ease-in-out;
+        }
+        /* Modal overlay styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.75rem; /* rounded-xl */
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1); /* shadow-lg */
+            width: 90%;
+            max-width: 500px;
+            position: relative;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4 sm:p-6 lg:p-8">
+    <div class="bg-white p-6 sm:p-8 rounded-xl shadow-lg w-full max-w-4xl">
+        <h1 class="text-3xl sm:text-4xl font-bold text-gray-800 mb-6 text-center">RSS Feed Reader</h1>
+
+        <div class="flex justify-end mb-4">
+            <button
+                id="settingsButton"
+                class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-sm transition duration-300 ease-in-out text-sm sm:text-base"
+            >
+                Settings
+            </button>
+        </div>
+
+        <div class="bg-gray-50 p-4 rounded-lg shadow-sm mb-6">
+            <div class="flex items-center justify-between cursor-pointer" id="storedFeedsHeader">
+                <h2 class="text-xl font-semibold text-gray-700">Stored Feeds</h2>
+                <svg id="collapseIcon" class="w-6 h-6 text-gray-600 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                </svg>
+            </div>
+            <div id="storedFeedsContent" class="mt-3 space-y-2 hidden">
+                <p class="text-gray-500 text-sm" id="noStoredFeedsMessage">No feeds stored yet. Fetch a feed to save it!</p>
+            </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-4 mb-6">
+            <input
+                type="url"
+                id="rssUrlInput"
+                placeholder="Enter RSS Feed URL (e.g., https://www.nasa.gov/feed/)"
+                class="flex-grow p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 text-base sm:text-lg"
+            >
+            <button
+                id="fetchFeedButton"
+                class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 text-base sm:text-lg"
+            >
+                Fetch Feed
+            </button>
+        </div>
+
+        <div id="messageBox" class="hidden px-4 py-3 rounded-lg relative mb-4" role="alert">
+            <strong class="font-bold" id="messagePrefix"></strong>
+            <span class="block sm:inline" id="messageText"></span>
+            <span class="absolute top-0 bottom-0 right-0 px-4 py-3 cursor-pointer" onclick="document.getElementById('messageBox').classList.add('hidden')">
+                <svg class="fill-current h-6 w-6" id="messageCloseIcon" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>Close</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.15a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.15 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/></svg>
+            </span>
+        </div>
+
+        <div id="loadingIndicator" class="hidden text-center text-blue-600 font-medium text-lg mb-4">
+            Loading feed...
+        </div>
+
+        <div id="feedContent" class="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+            <p class="text-gray-500 text-center py-8">Enter an RSS feed URL and click "Fetch Feed" to see articles.</p>
+        </div>
+    </div>
+
+    <div id="settingsModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Settings</h2>
+
+            <div class="mb-4">
+                <label for="proxyUrlSettingInput" class="block text-gray-700 text-sm font-bold mb-2">
+                    RSS to JSON Proxy URL:
+                </label>
+                <input
+                    type="url"
+                    id="proxyUrlSettingInput"
+                    class="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g., https://api.rss2json.com/v1/api.json?rss_url="
+                >
+                <p class="text-gray-500 text-xs mt-1">
+                    This service converts RSS feeds to JSON, bypassing CORS issues.
+                    Ensure it ends with `?rss_url=` or similar for feed URL appending.
+                </p>
+            </div>
+
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-gray-700 text-sm font-bold mb-2">Manage Feeds:</h3>
+                <div class="flex space-x-2">
+                    <button
+                        id="exportFeedsButton"
+                        class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out text-sm"
+                    >
+                        Export
+                    </button>
+                    <button
+                        id="importFeedsButton"
+                        class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out text-sm"
+                    >
+                        Import
+                    </button>
+                    <input type="file" id="importFileInput" accept="application/json" class="hidden">
+                </div>
+            </div>
+
+            <div class="flex justify-end space-x-3">
+                <button
+                    id="saveSettingsButton"
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105"
+                >
+                    Save Settings
+                </button>
+                <button
+                    id="closeSettingsButton"
+                    class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105"
+                >
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get references to DOM elements
+        const rssUrlInput = document.getElementById('rssUrlInput');
+        const fetchFeedButton = document.getElementById('fetchFeedButton');
+        const feedContent = document.getElementById('feedContent');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const messageBox = document.getElementById('messageBox');
+        const messagePrefix = document.getElementById('messagePrefix'); // New
+        const messageText = document.getElementById('messageText');
+        const messageCloseIcon = document.getElementById('messageCloseIcon'); // New
+        const storedFeedsHeader = document.getElementById('storedFeedsHeader');
+        const storedFeedsContent = document.getElementById('storedFeedsContent');
+        const collapseIcon = document.getElementById('collapseIcon');
+        const noStoredFeedsMessage = document.getElementById('noStoredFeedsMessage');
+
+        // Settings Modal Elements
+        const settingsButton = document.getElementById('settingsButton');
+        const settingsModal = document.getElementById('settingsModal');
+        const proxyUrlSettingInput = document.getElementById('proxyUrlSettingInput');
+        const saveSettingsButton = document.getElementById('saveSettingsButton');
+        const closeSettingsButton = document.getElementById('closeSettingsButton');
+        const exportFeedsButton = document.getElementById('exportFeedsButton');
+        const importFeedsButton = document.getElementById('importFeedsButton');
+        const importFileInput = document.getElementById('importFileInput');
+
+        // Local Storage Keys
+        const FEEDS_STORAGE_KEY = 'rss_feed_urls';
+        const COLLAPSE_STATE_KEY = 'stored_feeds_collapsed';
+        const PROXY_URL_KEY = 'rss_proxy_url';
+
+        // Default proxy URL
+        const DEFAULT_PROXY_URL = 'https://api.rss2json.com/v1/api.json?rss_url=';
+        let currentProxyUrl = DEFAULT_PROXY_URL; // Will be updated from localStorage on load
+
+        /**
+         * Displays a message in the message box with a specified type.
+         * @param {string} message - The message content.
+         * @param {'success'|'error'} type - The type of message ('success' or 'error').
+         */
+        function showMessage(message, type = 'error') {
+            // Reset classes
+            messageBox.classList.remove('bg-red-100', 'border-red-400', 'text-red-700', 'bg-green-100', 'border-green-400', 'text-green-700');
+            messagePrefix.classList.remove('text-red-700', 'text-green-700');
+            messageCloseIcon.classList.remove('text-red-500', 'text-green-500');
+
+            if (type === 'success') {
+                messageBox.classList.add('bg-green-100', 'border-green-400', 'text-green-700');
+                messagePrefix.textContent = 'Success!';
+                messagePrefix.classList.add('text-green-700');
+                messageCloseIcon.classList.add('text-green-500');
+            } else { // Default to error
+                messageBox.classList.add('bg-red-100', 'border-red-400', 'text-red-700');
+                messagePrefix.textContent = 'Error!';
+                messagePrefix.classList.add('text-red-700');
+                messageCloseIcon.classList.add('text-red-500');
+            }
+
+            messageText.textContent = message;
+            messageBox.classList.remove('hidden');
+        }
+
+        /**
+         * Hides the error message box.
+         */
+        function hideMessage() {
+            messageBox.classList.add('hidden');
+        }
+
+        /**
+         * Retrieves the stored feeds from localStorage.
+         * @returns {string[]} An array of stored RSS feed URLs.
+         */
+        function getStoredFeeds() {
+            try {
+                const stored = localStorage.getItem(FEEDS_STORAGE_KEY);
+                return stored ? JSON.parse(stored) : [];
+            } catch (e) {
+                console.error("Error parsing stored feeds from localStorage:", e);
+                return []; // Return empty array if parsing fails
+            }
+        }
+
+        /**
+         * Saves the current array of feeds to localStorage.
+         * @param {string[]} feeds - The array of RSS feed URLs to save.
+         */
+        function saveFeeds(feeds) {
+            try {
+                // Ensure unique feeds and sort them for consistent display
+                const uniqueFeeds = Array.from(new Set(feeds)).sort();
+                localStorage.setItem(FEEDS_STORAGE_KEY, JSON.stringify(uniqueFeeds));
+            } catch (e) {
+                console.error("Error saving feeds to localStorage:", e);
+                showMessage("Could not save feed URL to browser storage.", 'error');
+            }
+        }
+
+        /**
+         * Adds a new feed URL to localStorage if it doesn't already exist.
+         * @param {string} url - The URL to add.
+         */
+        function addFeed(url) {
+            let feeds = getStoredFeeds();
+            if (!feeds.includes(url)) {
+                feeds.push(url);
+                saveFeeds(feeds);
+                renderStoredFeeds(); // Re-render the list after adding
+            }
+        }
+
+        /**
+         * Removes a feed URL from localStorage.
+         * @param {string} urlToRemove - The URL to remove.
+         */
+        function removeFeed(urlToRemove) {
+            let feeds = getStoredFeeds();
+            const updatedFeeds = feeds.filter(url => url !== urlToRemove);
+            saveFeeds(updatedFeeds);
+            renderStoredFeeds(); // Re-render the list after removing
+        }
+
+        /**
+         * Toggles the collapse state of the stored feeds section.
+         */
+        function toggleStoredFeedsCollapse() {
+            const isCollapsed = storedFeedsContent.classList.toggle('hidden');
+            // If it's now collapsed, remove rotate-90; if expanded, add rotate-90
+            collapseIcon.classList.toggle('rotate-90', !isCollapsed);
+            localStorage.setItem(COLLAPSE_STATE_KEY, isCollapsed); // Save state
+        }
+
+        /**
+         * Renders the list of stored feeds in the UI.
+         */
+        function renderStoredFeeds() {
+            const feeds = getStoredFeeds();
+            storedFeedsContent.innerHTML = ''; // Clear existing list
+
+            if (feeds.length === 0) {
+                noStoredFeedsMessage.classList.remove('hidden');
+                storedFeedsContent.appendChild(noStoredFeedsMessage);
+            } else {
+                noStoredFeedsMessage.classList.add('hidden');
+                feeds.forEach(url => {
+                    const feedItem = document.createElement('div');
+                    feedItem.className = 'flex items-center justify-between bg-white border border-gray-200 p-2 rounded-md shadow-sm text-sm sm:text-base';
+
+                    const urlSpan = document.createElement('span');
+                    urlSpan.className = 'truncate max-w-[calc(100%-100px)] text-gray-700'; // Adjust max-w to prevent overlap with buttons
+                    urlSpan.textContent = url;
+                    urlSpan.title = url; // Full URL on hover
+
+                    const actionsDiv = document.createElement('div');
+                    actionsDiv.className = 'flex space-x-2 ml-2';
+
+                    const loadButton = document.createElement('button');
+                    loadButton.className = 'bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-md transition duration-200 ease-in-out text-xs sm:text-sm';
+                    loadButton.textContent = 'Load';
+                    loadButton.onclick = () => {
+                        rssUrlInput.value = url;
+                        fetchRssFeed();
+                    };
+
+                    const deleteButton = document.createElement('button');
+                    deleteButton.className = 'bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md transition duration-200 ease-in-out text-xs sm:text-sm';
+                    deleteButton.textContent = 'Delete';
+                    deleteButton.onclick = () => {
+                        removeFeed(url);
+                        showMessage(`Feed "${url}" deleted.`, 'success'); // Changed to success message
+                    };
+
+                    actionsDiv.appendChild(loadButton);
+                    actionsDiv.appendChild(deleteButton);
+                    feedItem.appendChild(urlSpan);
+                    feedItem.appendChild(actionsDiv);
+                    storedFeedsContent.appendChild(feedItem);
+                });
+            }
+        }
+
+        /**
+         * Retrieves the proxy URL setting from localStorage.
+         * @returns {string} The stored proxy URL or the default one.
+         */
+        function getProxyUrlSetting() {
+            try {
+                return localStorage.getItem(PROXY_URL_KEY) || DEFAULT_PROXY_URL;
+            } catch (e) {
+                console.error("Error retrieving proxy URL from localStorage:", e);
+                return DEFAULT_PROXY_URL;
+            }
+        }
+
+        /**
+         * Saves the proxy URL setting to localStorage.
+         * @param {string} url - The proxy URL to save.
+         */
+        function saveProxyUrlSetting(url) {
+            try {
+                localStorage.setItem(PROXY_URL_KEY, url);
+                currentProxyUrl = url; // Update the active proxy URL
+                showMessage("Proxy URL saved successfully!", 'success');
+            } catch (e) {
+                console.error("Error saving proxy URL to localStorage:", e);
+                showMessage("Could not save proxy URL setting.", 'error');
+            }
+        }
+
+        /**
+         * Shows the settings modal and pre-fills the input.
+         */
+        function showSettingsModal() {
+            proxyUrlSettingInput.value = currentProxyUrl; // Pre-fill with current value
+            settingsModal.classList.remove('hidden');
+        }
+
+        /**
+         * Hides the settings modal.
+         */
+        function hideSettingsModal() {
+            settingsModal.classList.add('hidden');
+        }
+
+        /**
+         * Exports all stored feeds to a JSON file.
+         */
+        function exportFeeds() {
+            const feeds = getStoredFeeds();
+            const dataStr = JSON.stringify(feeds, null, 2); // Pretty print JSON
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'rss_feeds.json';
+            document.body.appendChild(a); // Append to body to make it clickable
+            a.click();
+            document.body.removeChild(a); // Clean up
+            URL.revokeObjectURL(url); // Release the object URL
+            showMessage("Feeds exported successfully!", 'success'); // Changed to success type
+        }
+
+        /**
+         * Imports feeds from a selected JSON file.
+         */
+        function importFeeds() {
+            importFileInput.click(); // Trigger the hidden file input click
+        }
+
+        /**
+         * Handles the file selection for importing feeds.
+         * @param {Event} event - The change event from the file input.
+         */
+        function handleImportFile(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    if (Array.isArray(importedData) && importedData.every(item => typeof item === 'string')) {
+                        let currentFeeds = getStoredFeeds();
+                        // Merge new feeds with existing ones, ensuring uniqueness
+                        const mergedFeeds = Array.from(new Set([...currentFeeds, ...importedData]));
+                        saveFeeds(mergedFeeds);
+                        renderStoredFeeds();
+                        showMessage(`Successfully imported ${importedData.length} feeds.`, 'success'); // Changed to success type
+                    } else {
+                        throw new Error('Invalid file format. Expected an array of strings.');
+                    }
+                } catch (error) {
+                    console.error('Error importing feeds:', error);
+                    showMessage(`Failed to import feeds: ${error.message}`, 'error'); // Changed to error type
+                } finally {
+                    // Clear the file input value to allow selecting the same file again
+                    event.target.value = '';
+                }
+            };
+            reader.onerror = () => {
+                showMessage('Error reading file.', 'error'); // Changed to error type
+                event.target.value = ''; // Clear input
+            };
+            reader.readAsText(file);
+        }
+
+        /**
+         * Fetches and displays the RSS feed.
+         */
+        async function fetchRssFeed() {
+            const rssUrl = rssUrlInput.value.trim();
+            hideMessage(); // Hide any previous messages
+
+            if (!rssUrl) {
+                showMessage('Please enter an RSS feed URL.', 'error'); // Changed to error type
+                return;
+            }
+
+            // Clear previous content and show loading indicator
+            feedContent.innerHTML = '';
+            loadingIndicator.classList.remove('hidden');
+
+            try {
+                // Use the currentProxyUrl, which is loaded from localStorage or is the default
+                const finalProxyUrl = currentProxyUrl + encodeURIComponent(rssUrl);
+
+                const response = await fetch(finalProxyUrl);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data.status !== 'ok') {
+                    throw new Error(data.message || 'Failed to fetch RSS feed. Please check the URL.');
+                }
+
+                // If feed successfully fetched, add to stored feeds
+                addFeed(rssUrl);
+
+                if (!data.items || data.items.length === 0) {
+                    feedContent.innerHTML = '<p class="text-gray-500 text-center py-8">No articles found in this feed.</p>';
+                    return;
+                }
+
+                // Display each article
+                data.items.forEach(item => {
+                    const articleElement = document.createElement('div');
+                    articleElement.className = 'bg-gray-50 p-4 rounded-lg shadow-sm hover:shadow-md transition duration-200 ease-in-out';
+
+                    const title = item.title || 'No Title';
+                    const link = item.link || '#';
+                    // Clean up description: remove HTML tags for a cleaner snippet
+                    const description = item.description ? item.description.replace(/<[^>]*>/g, '').substring(0, 200) + (item.description.length > 200 ? '...' : '') : 'No description available.';
+                    const pubDate = item.pubDate ? new Date(item.pubDate).toLocaleDateString('en-US', {
+                        year: 'numeric', month: 'long', day: 'numeric'
+                    }) : 'No date';
+
+                    articleElement.innerHTML = `
+                        <h2 class="text-xl font-semibold text-blue-700 mb-2">
+                            <a href="${link}" target="_blank" rel="noopener noreferrer" class="hover:underline">${title}</a>
+                        </h2>
+                        <p class="text-gray-600 text-sm mb-2">${pubDate}</p>
+                        <p class="text-gray-700 text-base line-clamp-3">
+                            ${description}
+                        </p>
+                        <a href="${link}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:text-blue-600 text-sm font-medium mt-2 inline-block">Read more</a>
+                    `;
+                    feedContent.appendChild(articleElement);
+                });
+
+            } catch (error) {
+                console.error('Error fetching RSS feed:', error);
+                showMessage(`Could not fetch feed: ${error.message}. Please try again or check the URL in settings.`, 'error'); // Changed to error type
+                feedContent.innerHTML = '<p class="text-gray-500 text-center py-8">Failed to load articles.</p>';
+            } finally {
+                loadingIndicator.classList.add('hidden'); // Hide loading indicator regardless of success or failure
+            }
+        }
+
+        // Event listeners
+        fetchFeedButton.addEventListener('click', fetchRssFeed);
+        rssUrlInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                fetchRssFeed();
+            }
+        });
+
+        // Event listener for collapsing the stored feeds section
+        storedFeedsHeader.addEventListener('click', toggleStoredFeedsCollapse);
+
+        // Settings modal event listeners
+        settingsButton.addEventListener('click', showSettingsModal);
+        closeSettingsButton.addEventListener('click', hideSettingsModal);
+        saveSettingsButton.addEventListener('click', () => {
+            const newProxyUrl = proxyUrlSettingInput.value.trim();
+            if (newProxyUrl) {
+                saveProxyUrlSetting(newProxyUrl);
+                hideSettingsModal();
+            } else {
+                showMessage("Proxy URL cannot be empty. Using default.", 'error'); // Changed to error type
+                saveProxyUrlSetting(DEFAULT_PROXY_URL); // Revert to default if empty
+                hideSettingsModal();
+            }
+        });
+
+        // Import/Export event listeners
+        exportFeedsButton.addEventListener('click', exportFeeds);
+        importFeedsButton.addEventListener('click', importFeeds);
+        importFileInput.addEventListener('change', handleImportFile);
+
+        // Initial render and collapse state check when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            // Load and set the current proxy URL
+            currentProxyUrl = getProxyUrlSetting();
+
+            renderStoredFeeds();
+            // Load collapse state from localStorage. Default to collapsed if not explicitly 'false'.
+            const isCollapsed = localStorage.getItem(COLLAPSE_STATE_KEY) !== 'false';
+            if (isCollapsed) {
+                storedFeedsContent.classList.add('hidden');
+                collapseIcon.classList.remove('rotate-90'); // Adjust icon for collapsed state (arrow pointing right)
+            } else {
+                storedFeedsContent.classList.remove('hidden');
+                collapseIcon.classList.add('rotate-90'); // Adjust icon for expanded state (arrow pointing down)
+            }
+        });
+
+        // Optional: Pre-fill with an example and fetch on load for demonstration
+        // rssUrlInput.value = 'https://www.theverge.com/rss/index.xml';
+        // document.addEventListener('DOMContentLoaded', fetchRssFeed);
+    </script>
+</body>
+</html>
